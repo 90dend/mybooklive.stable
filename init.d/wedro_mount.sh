@@ -96,13 +96,7 @@ fi
 
 }
 
-
-restart() {
-    /etc/init.d/wedro_chroot.sh stop
-    stop
-    start
-    /etc/init.d/wedro_chroot.sh start
-}
+#######################################################################
 
 case "$1" in
     start)
@@ -112,12 +106,22 @@ case "$1" in
         stop
     ;;
     restart)
-        restart
+        /etc/init.d/wedro_chroot.sh stop
+        stop
+        start
+        /etc/init.d/wedro_chroot.sh start
     ;;
     install)
         script_install
     ;;
+    init)
+        script_install
+        sleep 1
+        start
+    ;;
     remove)
+        stop
+        sleep 1
         script_remove
     ;;
     *)

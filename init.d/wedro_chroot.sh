@@ -67,11 +67,6 @@ stop() {
     umount $CHROOT_DIR/mnt
 }
 
-restart() {
-    stop
-    start
-}
-
 #######################################################################
 
 update() {
@@ -92,7 +87,9 @@ case "$1" in
         stop
     ;;
     restart)
-        restart
+        stop
+        sleep 1
+        start
     ;;
     update)
         update
@@ -103,7 +100,14 @@ case "$1" in
     install)
         script_install
     ;;
+    init)
+        script_install
+        sleep 1
+        start
+    ;;
     remove)
+        stop
+        sleep 1
         script_remove
     ;;
     *)
