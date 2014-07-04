@@ -1,16 +1,16 @@
 #!/bin/sh
 
 SCRIPT_NAME='wedro_mount.sh'
-SCRIPT_START='17'
-SCRIPT_STOP='03'
+SCRIPT_START='01'
+SCRIPT_STOP='99'
 
 ### BEGIN INIT INFO
 # Provides:          $SCRIPT_NAME
 # Required-Start:
-# Required-Stop:
+# Required-Stop:     wedro_chroot.sh
 # X-Start-Before:
 # Default-Start:     2 3 4 5
-# Default-Stop:
+# Default-Stop:      0 6
 ### END INIT INFO
 
 script_install() {
@@ -31,6 +31,7 @@ C_OPT="$CUSTOM/opt"
 C_ROOT="$CUSTOM/root"
 C_VAR="$CUSTOM/var"
 C_ETC="$CUSTOM/etc"
+C_CHROOT="$CUSTOM/chroot"
 
 ###################################################
 
@@ -63,19 +64,27 @@ else
   echo "Error: ETC/OPT seems already mounted" >&2
 fi
 
+if [ -z "$(mount | grep '\/srv\/chroot')" ]; then
+  echo "Mounting SRV/CHROOT"
+  mkdir -p /srv/chroot
+  mount --bind $C_CHROOT /srv/chroot
+else
+  echo "Error: SRV/CHROOT seems already mounted" >&2
+fi
+
 }
 
 stop() {
 if [ -n "$(mount | grep '\/opt')" ]; then
   echo "Unmounting OPTWARE"
-  umount /opt
+  umount -l /opt
 else
   echo "Error: OPTWARE seems already unmounted" >&2
 fi
 
 if [ -n "$(mount | grep '\/root')" ]; then
   echo "Unmounting ROOT"
-  umount /root
+  umount -l /root
 else
   echo "Error: ROOT seems already unmounted" >&2
 fi
@@ -94,6 +103,13 @@ else
   echo "Error: ETC/OPT seems already unmounted" >&2
 fi
 
+if [ -n "$(mount | grep '\/srv\/chroot')" ]; then
+  echo "Unmounting SRV/CHROOT"
+  umount /srv/chroot
+else
+  echo "Error: SRV/CHROOT seems already unmounted" >&2
+fi
+
 }
 
 #######################################################################
@@ -106,10 +122,9 @@ case "$1" in
         stop
     ;;
     restart)
-        /etc/init.d/wedro_chroot.sh stop
         stop
+        sleep 1
         start
-        /etc/init.d/wedro_chroot.sh start
     ;;
     install)
         script_install

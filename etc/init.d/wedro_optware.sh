@@ -1,8 +1,8 @@
 #!/bin/sh
 
 SCRIPT_NAME='wedro_optware.sh'
-SCRIPT_START='90'
-SCRIPT_STOP='02'
+SCRIPT_START='98'
+SCRIPT_STOP='01'
 
 ### BEGIN INIT INFO
 # Provides:          $SCRIPT_NAME

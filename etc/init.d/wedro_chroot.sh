@@ -6,13 +6,16 @@ SCRIPT_STOP='01'
 
 MOUNT_DIR='/DataVolume/shares'
 
+CHROOT_DIR="/srv/chroot"
+CHROOT_SERVICES="$(cat /etc/opt/chroot-services.list)"
+
 ### BEGIN INIT INFO
 # Provides:          $SCRIPT_NAME
-# Required-Start:
+# Required-Start:    wedro_mount.sh
 # Required-Stop:
 # X-Start-Before:
 # Default-Start:     2 3 4 5
-# Default-Stop:
+# Default-Stop:      0 6
 ### END INIT INFO
 
 script_install() {
@@ -28,22 +31,40 @@ script_remove() {
 
 #######################################################################
 
-CUSTOM_VAR='/var/opt'
-CHROOT_DIR="$CUSTOM_VAR/chroot"
-CHROOT_SERVICES="$(cat /etc/opt/chroot-services.list)"
-
 check_mounted() {
-  if [ -z "$(mount | grep '\/DataVolume\/custom\/var')" ]; then
-      echo "CHROOT sems unmounted. exiting"
-      exit 1
-  fi
+    MOUNT_COUNTS="$(mount | grep $CHROOT_DIR | wc -l)"
+    if [[ $MOUNT_COUNTS -lt 1 ]]; then
+        echo "CHROOT sems unmounted. exiting"
+        exit 1
+    fi
+    CHROOT_COUNTS="$(chroot $CHROOT_DIR mount | wc -l)"
+}
+
+
+
+check_started() {
+    check_mounted
+    if [[ $CHROOT_COUNTS -gt 0 ]]; then
+        echo "CHROOT sems started. exiting"
+        exit 1
+    fi
+}
+
+check_stopped() {
+    check_mounted
+    if [[ $CHROOT_COUNTS -eq 0 ]]; then
+        echo "CHROOT sems stopped. exiting"
+        exit 1
+    fi
 }
 
 #######################################################################
 
 start() {
-    check_mounted
+    check_started
+
     mount --bind $MOUNT_DIR $CHROOT_DIR/mnt
+    mount --bind /opt $CHROOT_DIR/opt
 
     chroot $CHROOT_DIR mount -t proc none /proc -o rw,noexec,nosuid,nodev
     chroot $CHROOT_DIR mount -t sysfs none /sys -o rw,noexec,nosuid,nodev
@@ -55,26 +76,18 @@ start() {
 }
 
 stop() {
-    check_mounted
+    check_stopped
+
     for ITEM in $CHROOT_SERVICES; do
         chroot $CHROOT_DIR service $ITEM stop
     done
 
-    chroot $CHROOT_DIR umount /dev/pts
-    chroot $CHROOT_DIR umount /sys
-    chroot $CHROOT_DIR umount /proc
+    chroot $CHROOT_DIR umount -l /dev/pts
+    chroot $CHROOT_DIR umount -l /sys
+    chroot $CHROOT_DIR umount -l /proc
 
-    umount $CHROOT_DIR/mnt
-}
-
-#######################################################################
-
-update() {
-    chroot $CHROOT_DIR apt-get update
-}
-
-upgrade() {
-    chroot $CHROOT_DIR apt-get dist-upgrade
+    umount -l $CHROOT_DIR/opt
+    umount -l $CHROOT_DIR/mnt
 }
 
 #######################################################################
@@ -91,12 +104,6 @@ case "$1" in
         sleep 1
         start
     ;;
-    update)
-        update
-    ;;
-    upgrade)
-        upgrade
-    ;;
     install)
         script_install
     ;;
@@ -111,9 +118,8 @@ case "$1" in
         script_remove
     ;;
     *)
-        echo $"Usage: $0 {start|stop|restart|update|upgrade}"
+        echo $"Usage: $0 {start|stop|restart|update|upgrade|upgrade-system}"
         exit 1
 esac
 
 exit $?
-

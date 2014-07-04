@@ -5,23 +5,25 @@ C_ROOT="$CUSTOM/root"
 C_OPT="$CUSTOM/opt"
 C_VAR="$CUSTOM/var"
 C_ETC="$CUSTOM/etc"
+C_CHROOT="$CUSTOM/chroot"
 
-QUO="$CUSTOM/quo"
+QUO="/DataVolume/quo"
 
-CHROOT_DIR='/var/opt/chroot'
+CHROOT_DIR='/srv/chroot'
 
 #############################################
 
 if [ -d $QUO ]; then
-  chmod -R a+x $QUO/init.d
+  chmod -R a+x $QUO/etc
   chmod -R a+x $QUO/sbin
+  chmod a+x $QUO/extra/infect/wedroInfectRootfs.sh
   chmod a+x $QUO/install.sh
 fi
 
 #############################################
 
 return_quo() {
-echo 'Set up customizations =)'
+echo 'Set up user customizations =)'
 cd /
 
 ## PREPARING Custom dirs
@@ -44,14 +46,11 @@ if [ ! -d $C_ETC ]; then
   mkdir -p $C_ETC
 fi
 
-#############################################
+if [ ! -d $C_CHROOT ]; then
+  mkdir -p $C_CHROOT
+fi
 
-## APT magic
-echo 'APT: holding udev, enabling lenny repos instead of squeeze'
-aptitude hold udev > /dev/null
-sed -ie "s/deb .* squeeze/#&/g" /etc/apt/sources.list
-echo 'deb http://ftp.us.debian.org/debian/ lenny main' >> /etc/apt/sources.list
-aptitude clean > /dev/null
+#############################################
 
 ## HDD magic
 echo 'HDD: fighting annoying parking'
@@ -61,7 +60,7 @@ $QUO/sbin/idle3ctl -d /dev/sda
 
 ## MOUNT magic
   echo 'MOUNT: enabling necessary binded mounts at boot'
-  $QUO/init.d/wedro_mount.sh init
+  $QUO/etc/init.d/wedro_mount.sh init
 
 #############################################
 
@@ -71,7 +70,6 @@ if [ -z "$(ls /opt)" ]; then
   OPTWARE='1'
 else
   script_optware
-  echo 'export PATH=$PATH:/opt/bin:/opt/sbin' >> /etc/profile
 fi
 
 #############################################
@@ -92,41 +90,33 @@ fi
 ## ETC magic
 locale-gen
 
-for BINARY in "$(ls $QUO/extra/bin)"; do
-  cp $QUO/extra/bin/$BINARY /root/.bin
-done
+# Root utilities
+cp $QUO/extra/bin/* /root/.bin
 chmod -R a+x /root/.bin
 
-# CRON
-cp $QUO/extra/cron/mybooklive /etc/cron.daily
-chmod a+x /etc/cron.daily/mybooklive
-/etc/init.d/cron restart
-
 # Settings
-mv -fu /root/.etc/* -t /etc/opt
-rm -rf /root/.etc
-
 touch /etc/opt/chroot-services.list
 
 if [ "$ZERO" != '1' ]; then
+  chmod a+x /etc/opt/restore-configs.sh
   /etc/opt/restore-configs.sh
 else
   touch /etc/opt/restore-configs.sh
+  chmod a+x /etc/opt/restore-configs.sh
 fi
 
 # PATH
-echo 'export PATH=$PATH:/root/.bin' >> /root/.profile
-
-# APT 2
-apt-key adv --recv-keys --keyserver keyserver.ubuntu.com AED4B06F473041FA > /dev/null
+if [ -z "$(cat /root/.profile | grep 'PATH' | grep '\/root\/.bin')" ]; then
+  echo -e 'export PATH=$PATH:/root/.bin' >> /etc/profile
+fi
 
 #############################################
 
 export PATH=$PATH:/root/.bin
 
 echo 'Returning finished!'
-echo 'Please REBOOT WD MyBook Live after you end ALL configurations!'
-source /root/.profile
+echo 'WD MyBook Live will REBOOT!'
+reboot
 }
 
 #######################################################################################
@@ -134,51 +124,55 @@ source /root/.profile
 
 return_optware() {
   echo 'OPTWARE: installing...'
-  OLD_CWD=$CWD
+  OLD_PWD=$PWD
   cd /tmp
   ## FIXME  
   #cp $QUO/pkg/ipkg-opt_0.99.163-10_powerpc.ipk /tmp
   $QUO/sbin/setup-mybooklive.sh > /dev/null
-  cd $OLD_CWD
+  cd $OLD_PWD
   ipkg update
-  ipkg install htop mc screen
+  ipkg install htop mc screen patch py27-mercurial
 
   script_optware
-  echo 'ETC: fixing PATH for optware use'
-  echo 'export PATH=$PATH:/opt/bin:/opt/sbin' >> /etc/profile
 }
 
 script_optware() {
   echo 'OPTWARE: enabling init scripts'
-  $QUO/init.d/wedro_optware.sh init
+  $QUO/etc/init.d/wedro_optware.sh install
+
+  if [ -z "$(cat /etc/profile | grep 'PATH' | grep '\/opt\/')" ]; then
+    echo 'ETC: fixing PATH for optware use'
+    echo -e 'export PATH=$PATH:/opt/bin:/opt/sbin' >> /etc/profile
+  fi
+
 }
 
 #######################################################################################
 #######################################################################################
 
 return_chroot() {
-  dpkg -i $QUO/pkg/debootstrap_1.0.10lenny1_all.deb > /dev/null
+  dpkg -i $QUO/extra/pkg/debootstrap_1.0.10lenny1_all.deb > /dev/null
   ln -s -f /usr/share/debootstrap/scripts/sid /usr/share/debootstrap/scripts/testing
-  if [ -z "$(mount | grep '\/DataVolume\/custom\/var')" ]; then
+  if [ -z "$(mount | grep $C_CHROOT)" ]; then
     echo "CHROOT: custom /VAR was unmounted. Fixing..."
-    mount --bind /DataVolume/custom/var /var/opt
+    mount --bind $C_CHROOT $CHROOT_DIR
   fi
   if [ ! -d $CHROOT_DIR ]; then
     echo "CHROOT: chroot dir was absent. Fixing..."
     mkdir -p $CHROOT_DIR
   fi
-  debootstrap --variant=minbase --exclude=yaboot,udev,dbus --include=mc,aptitude testing $CHROOT_DIR http://ftp.ru.debian.org/debian/
-  echo 'primary' > $CHROOT_DIR/etc/debian_chroot
+  debootstrap --variant=minbase --exclude=yaboot,udev,dbus --include=mc,aptitude testing $CHROOT_DIR http://cdn.debian.net/debian/
+  echo 'chroot' > $CHROOT_DIR/etc/debian_chroot
   sed -i 's/^\(export PS1.*\)$/#\1/g' $CHROOT_DIR/root/.bashrc
   chroot $CHROOT_DIR apt-get -y update
-  chroot $CHROOT_DIR apt-get -y install htop mc screen
+  chroot $CHROOT_DIR apt-get -y install htop mc screen upgrade-system
 
   script_chroot
 }
 
 script_chroot() {
   echo 'CHROOT: enabling debian custom services in chroot'
-  $QUO/init.d/wedro_chroot.sh init
+  $QUO/etc/init.d/wedro_chroot.sh install
 }
 
 #######################################################################################
@@ -209,16 +203,16 @@ fi
 if [ ! -d $QUO/.hg ]; then
   mv -f $QUO $QUO.old
   hg-py2.7 clone https://dhameoelin@code.google.com/p/mybooklive/ $QUO
-  echo -e '[hostfingerprints]\ncode.google.com = e2:9e:46:29:a0:fd:3c:57:a0:68:30:c5:0a:45:97:63:bf:8d:75:fc' >> $QUO/.hg/hgrc
+#  echo -e '[hostfingerprints]\ncode.google.com = e2:9e:46:29:a0:fd:3c:57:a0:68:30:c5:0a:45:97:63:bf:8d:75:fc' >> $QUO/.hg/hgrc
   rm -rf $QUO.old
 else
-  OLD_CWD=$CWD
+  OLD_PWD=$PWD
   cd $QUO
   hg-py2.7 pull && hg-py2.7 update
-  cd $OLD_CWD
+  cd $OLD_PWD
 fi
 chmod a+x $QUO/install.sh
-chmod -R a+x $QUO/init.d
+chmod -R a+x $QUO/etc/init.d
 chmod -R a+x $QUO/sbin
 }
 
@@ -228,25 +222,10 @@ chmod -R a+x $QUO/sbin
 update_scripts() {
   SCRIPTS="wedro_mount.sh wedro_optware.sh wedro_chroot.sh"
   for ITEM in $SCRIPTS; do
-    $QUO/init.d/$ITEM remove
-    $QUO/init.d/$ITEM install
+    $QUO/etc/init.d/$ITEM remove
+    $QUO/etc/init.d/$ITEM install
   done
 }
-
-infect_update() {
-  ## Blah-blah
-  ## TODO: mount QUO in rootfs for infection & chroot info rootfs
-  if [ -z "$2"]; then
-    exit 1
-  else
-    SRCDIR="$2"
-    SCRIPTS="wedro_mount.sh wedro_optware.sh wedro_chroot.sh"
-    for ITEM in $SCRIPTS; do
-      $RSCDIR/init.d/$ITEM install
-    done
-  fi
-}
-
 
 #######################################################################################
 #######################################################################################
@@ -270,9 +249,6 @@ case "$1" in
     ;;
     renew)
         update_scripts
-    ;;
-    infect)
-        infect_update
     ;;
     *)
         echo $"Usage: $0 {setup (!) | init | optware (*) | chroot (*) | update (*) }"
